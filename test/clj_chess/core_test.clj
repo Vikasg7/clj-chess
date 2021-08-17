@@ -21,6 +21,20 @@
             (->> (play-moves state pgns)
                  (:board)
                  (unparse-board)))
-        "4r2k/p7/1p4Q1/4P2R/1P6/P1rP3K/7P/8"))))
+        "4r2k/p7/1p4Q1/4P2R/1P6/P1rP3K/7P/8")))
+  (testing ":unambigious-piece-move (hint: rank)"
+    (is (=  (let [state (fen->state "7Q/5Q2/8/5Q1Q/1KP5/8/k7/7Q w - - 0 1")
+                  pgns ["Q1h2"]]
+            (->> (play-moves state pgns)
+                 (:board)
+                 (unparse-board)))
+        "7Q/5Q2/8/5Q1Q/1KP5/8/k6Q/8")))
+  (testing ":unambigious-piece-move (hint: file, rank)"
+    (is (=  (let [state (fen->state "7Q/5Q2/8/5Q1Q/1KP5/8/k7/7Q w - - 0 1")
+                  pgns ["Qf5h7"]]
+            (->> (play-moves state pgns)
+                 (:board)
+                 (unparse-board)))
+        "7Q/5Q1Q/8/7Q/1KP5/8/k7/7Q"))))
 
 (run-tests)

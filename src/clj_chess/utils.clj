@@ -6,6 +6,9 @@
 (defn lower-case? [x]
   (Character/isLowerCase x))
 
+(defn is-letter? [x]
+  (Character/isLetter x))
+
 (defn add-vec [a b]
   (mapv + a b))
 

@@ -156,10 +156,20 @@
                       [{:src (get-src board p [r f])
                         :dst [r f]}])
     ;; :unambigious-piece-move (hint: file)
-    [p f t r]         (let [[f t] (map char->file [f t])
+    [p (f :guard is-letter?) t r]         
+                      (let [[f t] (map char->file [f t])
                             p     {:player player, :type p}]
                       [{:src (get-src board p [r t] f nil)
                         :dst [r t]}])
+    ;; :unambigious-piece-move (hint: rank)
+    [p (g :guard int?) t r]         
+                      (let [t (char->file t)
+                            p {:player player, :type p}]
+                      [{:src (get-src board p [r t] nil g)
+                        :dst [r t]}])
+    ;; :unambigious-piece-move (hint: file, rank)
+    [p f g t r]       (let [[f t] (map char->file [f t])]
+                      [{:src [g f], :dst [r t]}])
     :else             "Invalid pgn")))
 
 (defn play-move [state pgn]

@@ -12,7 +12,27 @@
 (defn in-range? [u l v]
     (and (>= v u) (<= v l)))
 
-(defn filter-by-val [mp val]
+(defn where? [k v]
+  (fn [mp]
+    (when mp (= v (mp k)))))
+
+(defn filter-keys [f mp]
   (for [[k v] mp
-        :when (= v val)]
+        :when (f v)]
     k))
+
+(defn filter-first [f coll]
+  (first (filter f coll)))
+
+(def char-seq seq)
+
+(defn debug [& vals]
+  (apply println vals)
+  (identity val))
+
+(defn to-int
+  ([v]
+    (to-int (str v) v))
+  ([v d]
+    (try (Integer/parseInt v)
+    (catch Exception e d))))

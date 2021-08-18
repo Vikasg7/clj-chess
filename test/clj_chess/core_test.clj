@@ -14,6 +14,16 @@
   (testing "c4 is pinned"
     (is (pinned? (parse-board "8/4k3/8/8/1KP3r1/8/8/8") "w" [4 3] [5 3]))))
 
+(deftest npson-srq-test
+  (testing "f6 is npson target for white"
+    (is (= (-> (fen->state "r1bqkbnr/pp2pppp/2np4/6P1/2pPP3/2N5/PPP2P1P/R1BQKBNR b KQkq - 0 5")
+               (npson-sqr [{:src [7 6] :dst [5 6]}]))
+           "f6")))
+  (testing "d3 is npson target for black"
+    (is (= (-> (fen->state "rnbqkbnr/pp1ppppp/8/8/2p1P3/2N5/PPPP1PPP/R1BQKBNR w KQkq - 0 3")
+               (npson-sqr [{:src [2 4] :dst [4 4]}]))
+           "d3"))))
+
 (deftest play-moves-test
   (testing "Playing moves from a random game to produce desired board fen"
     (is (=  (let [state (fen->state "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")

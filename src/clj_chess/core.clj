@@ -7,9 +7,6 @@
 
 (declare get-moves make-move)
 
-(def char->file
-  (zipmap "abcdefgh" (range 1 9)))
-
 (def toggle-player {"w" "b", "b" "w"})
 
 (defn get-pos [board piece]
@@ -43,8 +40,8 @@
     {:player _   :type \B} [[-1 -1] [-1 1] [1 -1] [1 1]]
     {:player _   :type \R} [[0 -1] [0 1] [-1 0] [1 0]]
     {:player _   :type \N} [[-2 -1] [-2 1] [1 -2] [-1 -2] [2 -1] [2 1] [1 2] [-1 2]]
-    {:player "w" :type \P} [[1 0] [2 0]]
-    {:player "b" :type \P} [[-1 0] [-2 0]]))
+    {:player "w" :type \P} [[1 0] [2 0] [1 -1] [1 1]]
+    {:player "b" :type \P} [[-1 0] [-2 0] [-1 1] [-1 -1]]))
 
 (defn get-moves
   ([board src]
@@ -108,7 +105,7 @@
         board  (state :board)
         enpson (->> (state :npson)
                     (mapv to-int))
-        nxt    (case player
+        prv    (case player
                  "w" dec
                  "b" inc)
         recurr (partial pgn->moves state)]
@@ -130,25 +127,25 @@
     [f r \= p]        (let [f (char->file f)]
                       [{:type "promotion",
                         :piece {:player player, :type p},
-                        :src   [(nxt r) f],
+                        :src   [(prv r) f],
                         :dst   [r f]}])
     ;; :enpassant
     [(f :guard lower-case?) & ([t r] :guard #(= enpson %))]
                       (let [[f t] (map char->file [f t])]
                       [{:type "enpassant",
-                        :src  [(nxt r) f],
+                        :src  [(prv r) f],
                         :dst  [r t]
-                        :nul  [(nxt r) t]}])
+                        :nul  [(prv r) t]}])
     ;; :unambigious-pawn-move
     [(f :guard lower-case?) t r]
                       (let [[f t] (map char->file [f t])]
-                      [{:src [(nxt r) f], :dst [r t]}])
+                      [{:src [(prv r) f], :dst [r t]}])
     ;; :unambigious-pawn-promotion
     [(f :guard lower-case?) t r \= p]
                       (let [[f t] (map char->file [f t])]
                       [{:type "promotion",
                         :piece {:player player, :type p},
-                        :src   [(nxt r) f],
+                        :src   [(prv r) f],
                         :dst   [r t]}])
     ;; :piece-move
     [p f r]           (let [f (char->file f)
@@ -172,9 +169,24 @@
                       [{:src [g f], :dst [r t]}])
     :else             "Invalid pgn")))
 
+(defn npson-sqr [state [move]]
+  (let [board (state :board)
+        playr (state :playr)
+        piece (board (move :src))
+        prv   (case playr
+                "w" dec
+                "b" inc)
+        [r f] (move :dst)]
+  (when (and (= (piece :type) \P)
+             (= (rank-diff move) 2)
+             (or (= (get-in board [[r (inc f)] :type]) \P)
+                 (= (get-in board [[r (dec f)] :type]) \P)))
+    (cord->pgn [(prv r) f]))))
+
 (defn play-move [state pgn]
   (let [moves (pgn->moves state pgn)]
   (-> state
+      (update :npson (constantly (npson-sqr state moves)))
       (update :board make-moves moves)
       (update :playr toggle-player))))
 
@@ -182,7 +194,12 @@
   (reduce play-move state pgns))
 
 (defn play-moves-traces [state pgns]
-  (reductions update-game state pgns))
+  (reductions play-move state pgns))
+
+(defn rank-diff [move]
+  (let [[r f] (move :src)
+        [a b] (move :dst)]
+  (Math/abs ^Integer (- r a))))
 
 (defn -main []
   (let [state (fen->state "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")

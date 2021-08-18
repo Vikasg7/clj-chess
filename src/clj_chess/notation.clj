@@ -109,3 +109,12 @@
              (if-not npson "-" npson)
              hfmvs
              flmvs])))
+
+(def char->file
+  (zipmap "abcdefgh" (range 1 9)))
+
+(def file->char
+  (zipmap (range 1 9) "abcdefgh"))
+
+(defn cord->pgn [[r f]]
+  (str (file->char f) r))

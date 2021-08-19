@@ -79,7 +79,7 @@
   (let [[b p c e h f] (split fen #" ")]
   {:board (parse-board b)
    :playr p
-   :casle (if (= c "-") nil (char-seq c))
+   :casle (if (= c "-") [] (char-seq c))
    :npson (if (= e "-") nil e)
    :hfmvs (to-int h 0)
    :flmvs (to-int f 0)}))
@@ -105,7 +105,7 @@
   (let [{:keys [board playr casle npson hfmvs flmvs]} state]
   (join " " [(unparse-board board)
              playr
-             (if-not casle "-" (apply str casle))
+             (if (empty? casle) "-" (apply str casle))
              (if-not npson "-" npson)
              hfmvs
              flmvs])))

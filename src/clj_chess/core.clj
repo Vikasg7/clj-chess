@@ -1,7 +1,7 @@
 (ns clj-chess.core
   (:use [clj-chess.utils]
         [clj-chess.notation])
-  (:require [clojure.string :refer [split]]
+  (:require [clojure.string :refer [split upper-case lower-case]]
             [clojure.pprint :refer [pprint]]
             [clojure.core.match :refer [match]]))
 
@@ -169,6 +169,11 @@
                       [{:src [g f], :dst [r t]}])
     :else             "Invalid pgn")))
 
+(defn rank-diff [move]
+  (let [[r f] (move :src)
+        [a b] (move :dst)]
+  (Math/abs ^Integer (- r a))))
+
 (defn npson-sqr [state [move]]
   (let [board (state :board)
         playr (state :playr)
@@ -183,12 +188,43 @@
                  (= (get-in board [[r (dec f)] :type]) \P)))
     (cord->pgn [(prv r) f]))))
 
+(defn flmvs-cntr [cnt player]
+  (case player
+    "w" cnt
+    "b" (inc cnt)))
+
+(defn hfmvs-clock [cnt [fst & res :as pgn]]
+  (cond (.contains pgn "x") 0 ; capture?
+        (lower-case? fst)   0 ; pawn-move?
+        :else               (inc cnt)))
+
+(defn casle-ability [ability player [fst & res :as pgn] [move]]
+  (let [tgl (case player 
+              "w" (comp char-seq upper-case)
+              "b" (comp char-seq lower-case))
+        kq  (into #{} (mapcat tgl "kq"))
+        q   (into #{} (mapcat tgl "q"))
+        k   (into #{} (mapcat tgl "k"))
+        fyl (second (move :src))]
+  (cond (= pgn "O-O")   (remove kq ability)
+        (= pgn "O-O-O") (remove kq ability)
+        (= fst \K)      (remove kq ability)
+        (= fst \R)      (match fyl
+                          1     (remove q ability)
+                          8     (remove k ability)
+                          :else ability)
+        :else           ability)))
+
 (defn play-move [state pgn]
-  (let [moves (pgn->moves state pgn)]
+  (let [moves (pgn->moves state pgn)
+        playr (state :playr)]
   (-> state
-      (update :npson (constantly (npson-sqr state moves)))
       (update :board make-moves moves)
-      (update :playr toggle-player))))
+      (update :playr toggle-player)
+      (update :casle casle-ability playr pgn moves)
+      (assoc  :npson (npson-sqr state moves))
+      (update :flmvs flmvs-cntr playr)
+      (update :hfmvs hfmvs-clock pgn))))
 
 (defn play-moves [state pgns]
   (reduce play-move state pgns))
@@ -196,14 +232,12 @@
 (defn play-moves-traces [state pgns]
   (reductions play-move state pgns))
 
-(defn rank-diff [move]
-  (let [[r f] (move :src)
-        [a b] (move :dst)]
-  (Math/abs ^Integer (- r a))))
-
 (defn -main []
   (let [state (fen->state "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
         pgns (split "e4 e6 f4 d5 e5 Bc5 Nf3 Ne7 d4 Bb6 Be2 c5 Be3 Nf5 Bf2 cxd4 Nxd4 Bxd4 Bxd4 O-O Bf2 Qa5+ Nc3 Nc6 a3 d4 b4 Qd8 Ne4 b6 Bd3 Bb7 Qh5 Nce7 Ng5 h6 Ne4 Ng6 g3 Rc8 O-O Bd5 Rae1 Qc7 Re2 Bc4 Kg2 Nge7 g4 Ne3+ Bxe3 Bxd3 cxd3 dxe3 Rxe3 Qc2+ Rf2 Qc3 Nxc3 Rxc3 f5 Nd5 Rg3 exf5 gxf5 Re8 Qxh6 Ne3+ Kh3 Nxf5 Rxf5 g6 Rxg6+ fxg6 Qxg6+ Kh8 Rh5#" #" ")]
   (time (->> (play-moves state pgns)
              (:board)
-             (print-board)))))
+             (print-board)))
+  (->> (play-moves-traces state pgns)
+       (map state->fen)
+       (map println))))

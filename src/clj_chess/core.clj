@@ -113,17 +113,22 @@
                     (mapv to-int))
         prv    (case player
                  "w" dec
-                 "b" inc)
-        recurr (partial pgn->moves state)]
+                 "b" inc)]
   (match pgn
     ;; :king-side-castle
-    [\O \- \O]        (case player
-                        "w" (mapcat recurr ["Kg1" "Rhf1"])
-                        "b" (mapcat recurr ["Kg8" "Rhf8"]))
+    [\O \- \O]        (let [pgns (case player
+                                   "w" ["Kg1" "Rhf1"]
+                                   "b" ["Kg8" "Rhf8"])]
+                      (->> pgns
+                           (mapcat (partial pgn->moves state))
+                           (keep identity)))
     ;; :queen-side-castle
-    [\O \- \O \- \O]  (case player
-                        "w" (mapcat recurr ["Kc1" "Rad1"])
-                        "b" (mapcat recurr ["Kc8" "Rad8"]))
+    [\O \- \O \- \O]  (let [pgns (case player
+                                   "w" ["Kc1" "Rad1"]
+                                   "b" ["Kc8" "Rad8"])]
+                      (->> pgns
+                           (mapcat (partial pgn->moves state))
+                           (keep identity)))
     ;; :pawn-move
     [f r]             (let [f  (char->file f)
                             pc {:player player :type \P}]
@@ -185,6 +190,7 @@
                             pc    {:player player, :type p}]
                       (when-let [src (get-src board pc [r t] f g)]
                         [{:src src, :dst [r t]}]))
+    ;; :invalid-pgn
     :else             nil)))
 
 (defn rank-diff [move]

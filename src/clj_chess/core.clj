@@ -33,6 +33,9 @@
 (defn hit-enemy? [piece player]
   (not= player (piece :player)))
 
+(defn can-castle? []
+  true)
+
 (defn offsets [piece]
   (match piece
     {:player _   :type \K} [[0 -1] [0 1] [-1 -1] [-1 0] [-1 1] [1 -1] [1 0] [1 1]]
@@ -71,6 +74,9 @@
     [nil   _] (fn [[r f]] (= r rank))
     :else     (fn [[r f]] (= [r f] [rank file]))))
 
+(defn attack-dst? [board dst src]
+  (.contains (get-moves board false src) dst))
+
 (defn get-srcs
   ([board piece dst]
     (get-srcs board piece dst nil nil))
@@ -79,7 +85,7 @@
                     (filter (ambiguity-hint file rank)))]
     (match (count srcs) 
       1     srcs
-      :else (let [attacks-dst? (fn [src] (.contains (get-moves board false src) dst))]
+      :else (let [attacks-dst? (partial attack-dst? board dst)]
             (filter attacks-dst? srcs))))))
 
 (def get-src (comp first get-srcs))
@@ -119,55 +125,67 @@
                         "w" (mapcat recurr ["Kc1" "Rad1"])
                         "b" (mapcat recurr ["Kc8" "Rad8"]))
     ;; :pawn-move
-    [f r]             (let [f (char->file f)
-                            p {:player player :type \P}]
-                      [{:src (get-src board p [r f] f nil),
-                        :dst [r f]}])
+    [f r]             (let [f  (char->file f)
+                            pc {:player player :type \P}]
+                      (when-let [src (get-src board pc [r f] f nil)] 
+                        [{:src src, :dst [r f]}]))
     ;; :pawn-promotion
-    [f r \= p]        (let [f (char->file f)]
-                      [{:type "promotion",
-                        :piece {:player player, :type p},
-                        :src   [(prv r) f],
-                        :dst   [r f]}])
+    [f r \= p]        (let [f  (char->file f)
+                            pc {:player player :type \P}]
+                      (when-let [src (get-src board pc [r f] f nil)]
+                        [{:type "promotion",
+                          :piece {:player player, :type p},
+                          :src   src,
+                          :dst   [r f]}]))
     ;; :enpassant
     [(f :guard lower-case?) & ([t r] :guard #(= enpson %))]
-                      (let [[f t] (map char->file [f t])]
-                      [{:type "enpassant",
-                        :src  [(prv r) f],
-                        :dst  [r t]
-                        :nul  [(prv r) t]}])
+                      (let [[f t] (map char->file [f t])
+                            pc    {:player player :type \P}]
+                      (when-let [src (get-src board pc [r f] f nil)]
+                        [{:type "enpassant",
+                          :src  src,
+                          :dst  [r t]
+                          :nul  [(prv r) t]}]))
     ;; :unambigious-pawn-move
     [(f :guard lower-case?) t r]
-                      (let [[f t] (map char->file [f t])]
-                      [{:src [(prv r) f], :dst [r t]}])
+                      (let [[f t] (map char->file [f t])
+                            pc    {:player player :type \P}]
+                      (when     (hit-enemy? (board [r t]) player)
+                      (when-let [src (get-src board pc [r f] f nil)]
+                        [{:src src, :dst [r t]}])))
     ;; :unambigious-pawn-promotion
     [(f :guard lower-case?) t r \= p]
-                      (let [[f t] (map char->file [f t])]
-                      [{:type "promotion",
-                        :piece {:player player, :type p},
-                        :src   [(prv r) f],
-                        :dst   [r t]}])
+                      (let [[f t] (map char->file [f t])
+                            pc    {:player player :type \P}]
+                      (when     (hit-enemy? (board [r t]) player)
+                      (when-let [src (get-src board pc [r f] f nil)]
+                        [{:type "promotion",
+                          :piece {:player player, :type p},
+                          :src   src, 
+                          :dst   [r t]}])))
     ;; :piece-move
-    [p f r]           (let [f (char->file f)
-                            p {:player player, :type p}]
-                      [{:src (get-src board p [r f])
-                        :dst [r f]}])
+    [p f r]           (let [f  (char->file f)
+                            pc {:player player, :type p}]
+                      (when-let [src (get-src board pc [r f])]
+                        [{:src src, :dst [r f]}]))
     ;; :unambigious-piece-move (hint: file)
     [p (f :guard is-letter?) t r]         
                       (let [[f t] (map char->file [f t])
-                            p     {:player player, :type p}]
-                      [{:src (get-src board p [r t] f nil)
-                        :dst [r t]}])
+                            pc    {:player player, :type p}]
+                      (when-let [src (get-src board pc [r f] f nil)]
+                        [{:src src, :dst [r t]}]))
     ;; :unambigious-piece-move (hint: rank)
-    [p (g :guard int?) t r]         
-                      (let [t (char->file t)
-                            p {:player player, :type p}]
-                      [{:src (get-src board p [r t] nil g)
-                        :dst [r t]}])
+    [p (g :guard int?) t r]
+                      (let [t  (char->file t)
+                            pc {:player player, :type p}]
+                      (when-let [src (get-src board pc [r t] nil g)]
+                        [{:src src, :dst [r t]}]))
     ;; :unambigious-piece-move (hint: file, rank)
-    [p f g t r]       (let [[f t] (map char->file [f t])]
-                      [{:src [g f], :dst [r t]}])
-    :else             "Invalid pgn")))
+    [p f g t r]       (let [[f t] (map char->file [f t])
+                            pc    {:player player, :type p}]
+                      (when-let [src (get-src board pc [r t] f g)]
+                        [{:src src, :dst [r t]}]))
+    :else             nil)))
 
 (defn rank-diff [move]
   (let [[r f] (move :src)
@@ -208,8 +226,8 @@
         fyl (second (move :src))]
   (cond (= pgn "O-O")   (remove kq ability)
         (= pgn "O-O-O") (remove kq ability)
-        (= fst \K)      (remove kq ability)
-        (= fst \R)      (match fyl
+        (= fst \K)      (remove kq ability) ; king-move?
+        (= fst \R)      (match fyl          ; rook-move?
                           1     (remove q ability)
                           8     (remove k ability)
                           :else ability)

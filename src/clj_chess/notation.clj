@@ -85,9 +85,9 @@
    :flmvs (to-int f 0)}))
 
 (defn unparse-row [coll]
-  (let [f (fn [grp] 
-            (if (> (.indexOf grp nil) -1) 
-              (count grp) 
+  (let [f (fn unparse [grp]
+            (if (.contains grp nil) 
+              (count grp)
               (apply str grp)))]
   (->> (mapv f coll)
        (join ""))))
@@ -118,3 +118,8 @@
 
 (defn cord->pgn [[r f]]
   (str (file->char f) r))
+
+(defn get-pgn-moves [pgn]
+  (->> (split pgn #" ")
+       (partition 3)
+       (mapcat (partial drop 1))))

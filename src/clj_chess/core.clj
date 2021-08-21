@@ -12,20 +12,23 @@
 (defn get-pos [board piece]
   (filter-keys (partial = piece) board))
 
+(defn attacked? [board player pos]
+  (let [enemies  (filter-keys (where? :player (toggle-player player)) board)]
+  (->> (mapcat (partial get-moves board false) enemies)
+       (some (partial = pos)))))
+
 (defn in-check? [board player]
   (let [king     {:player player, :type \K}
-        king-pos (first (get-pos board king))
-        enemies  (filter-keys (where? :player (toggle-player player)) board)]
-  (->> (mapcat (partial get-moves board false) enemies)
-       (some (partial = king-pos)))))
+        king-pos (first (get-pos board king))]
+  (attacked? board player king-pos)))
 
 (defn pinned? [board player src dst]
   (let [nboard (make-move board {:src src, :dst dst})]
   (in-check? nboard player)))
 
-;; cord = [rank file]
-(defn in-board? [cord]
-  (every? (partial in-range? 1 8) cord))
+;; pos = [rank file]
+(defn in-board? [pos]
+  (every? (partial in-range? 1 8) pos))
 
 (defn hit-friendly? [piece player]
   (= player (piece :player)))
@@ -33,8 +36,23 @@
 (defn hit-enemy? [piece player]
   (not= player (piece :player)))
 
-(defn can-castle? []
-  true)
+(defn poses-between 
+  ([[r f] [rr ff]]
+    (if (< f ff)
+      (poses-between f ff r)
+      (poses-between ff f r)))
+  ([from-file to-file rank]
+    (->> (range (inc from-file) to-file)
+         (map #(vector rank %)))))
+
+(defn can-castle? [board player moves]
+  (when (every? some? moves)
+    (let [[km rm] moves
+          kingpos (km :src)
+          rookpos (rm :src)
+          poses   (poses-between kingpos rookpos)]
+    (->> (map (partial attacked? board player) poses)
+         (every? nil?)))))
 
 (defn offsets [piece]
   (match piece
@@ -116,19 +134,17 @@
                  "b" inc)]
   (match pgn
     ;; :king-side-castle
-    [\O \- \O]        (let [pgns (case player
-                                   "w" ["Kg1" "Rhf1"]
-                                   "b" ["Kg8" "Rhf8"])]
-                      (->> pgns
-                           (mapcat (partial pgn->moves state))
-                           (keep identity)))
+    [\O \- \O]        (let [pgns  (case player
+                                    "w" ["Kg1" "Rhf1"]
+                                    "b" ["Kg8" "Rhf8"])
+                            moves (mapcat (partial pgn->moves state) pgns)]
+                      (when (can-castle? board player moves) moves))
     ;; :queen-side-castle
-    [\O \- \O \- \O]  (let [pgns (case player
-                                   "w" ["Kc1" "Rad1"]
-                                   "b" ["Kc8" "Rad8"])]
-                      (->> pgns
-                           (mapcat (partial pgn->moves state))
-                           (keep identity)))
+    [\O \- \O \- \O]  (let [pgns  (case player
+                                    "w" ["Kc1" "Rad1"]
+                                    "b" ["Kc8" "Rad8"])
+                            moves (mapcat (partial pgn->moves state) pgns)]
+                      (when (can-castle? board player moves) moves))
     ;; :pawn-move
     [f r]             (let [f  (char->file f)
                             pc {:player player :type \P}]
@@ -210,7 +226,7 @@
              (= (rank-diff move) 2)
              (or (= (get-in board [[r (inc f)] :type]) \P)
                  (= (get-in board [[r (dec f)] :type]) \P)))
-    (cord->pgn [(prv r) f]))))
+    (pos->pgn [(prv r) f]))))
 
 (defn flmvs-cntr [cnt player]
   (case player
@@ -242,13 +258,15 @@
 (defn play-move [state pgn]
   (let [moves (pgn->moves state pgn)
         playr (state :playr)]
-  (-> state
-      (update :board make-moves moves)
-      (update :playr toggle-player)
-      (update :casle casle-ability playr pgn moves)
-      (assoc  :npson (npson-sqr state moves))
-      (update :flmvs flmvs-cntr playr)
-      (update :hfmvs hfmvs-clock pgn))))
+  (if (empty? moves)
+    (reduced (str "couldn't parse " pgn))
+    (-> state
+        (update :board make-moves moves)
+        (update :playr toggle-player)
+        (update :casle casle-ability playr pgn moves)
+        (assoc  :npson (npson-sqr state moves))
+        (update :flmvs flmvs-cntr playr)
+        (update :hfmvs hfmvs-clock pgn)))))
 
 (defn play-moves [state pgns]
   (reduce play-move state pgns))

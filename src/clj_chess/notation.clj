@@ -116,7 +116,7 @@
 (def file->char
   (zipmap (range 1 9) "abcdefgh"))
 
-(defn cord->pgn [[r f]]
+(defn pos->pgn [[r f]]
   (str (file->char f) r))
 
 (defn get-pgn-moves [pgn]

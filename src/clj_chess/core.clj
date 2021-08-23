@@ -281,7 +281,7 @@
   (let [moves (pgn->moves state pgn)
         playr (state :playr)]
   (if (empty? moves)
-        (reduced (str "couldn't parse " pgn))
+    (reduced (str "couldn't parse " pgn))
     (-> state
         (update :board make-moves moves)
         (update :playr toggle-player)

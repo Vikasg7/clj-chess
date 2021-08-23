@@ -56,4 +56,12 @@
                  (state->fen)))
         "8/5b2/5p2/3k1Pp1/6Pp/5n1P/7q/7K w - - 1 68"))))
 
+(deftest get-moves-test
+  (testing "King moves - 1"
+    (is (= (get-moves (parse-board "8/k7/8/3p4/8/4K3/8/8") [3 5])
+           [[3 4] [3 6] [2 4] [2 5] [2 6] [4 4] [4 6]])))
+  (testing "King moves - 2"
+    (is (= (get-moves (parse-board "8/k2p4/8/8/4K3/8/8/8") [4 5])
+           [[4 4] [4 6] [3 4] [3 5] [3 6] [5 4] [5 5] [5 6]]))))
+
 (run-tests)

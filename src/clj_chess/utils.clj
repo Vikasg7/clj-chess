@@ -31,7 +31,7 @@
 
 (defn debug [& vals]
   (apply println vals)
-  (identity val))
+  vals)
 
 (defn to-int
   ([v]

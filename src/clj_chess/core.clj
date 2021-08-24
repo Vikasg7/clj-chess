@@ -5,7 +5,7 @@
             [clojure.pprint :refer [pprint]]
             [clojure.core.match :refer [match]]))
 
-(declare get-moves make-move)
+(declare get-dsts make-move)
 
 (def toggle-player {"w" "b", "b" "w"})
 
@@ -14,7 +14,7 @@
 
 (defn attacked? [board player pos]
   (let [enemies  (filter-keys (where? :player (toggle-player player)) board)]
-  (->> (mapcat (partial get-moves board false) enemies)
+  (->> (mapcat (partial get-dsts board false) enemies)
        (some (partial = pos)))))
 
 (defn in-check? [board player]
@@ -31,10 +31,12 @@
   (every? (partial in-range? 1 8) pos))
 
 (defn hit-friendly? [piece player]
-  (= player (piece :player)))
+  (when piece
+    (= player (piece :player))))
 
 (defn hit-enemy? [piece player]
-  (not= player (piece :player)))
+  (when piece
+    (not= player (piece :player))))
 
 (defn poses-between 
   ([[r f] [rr ff]]
@@ -77,9 +79,9 @@
     {:player "b" :type \P} [[-1 1] [-1 -1]]
     :else                  nil))
 
-(defn get-moves
+(defn get-dsts
   ([board src]
-    (get-moves board true src))
+    (get-dsts board true src))
   ([board pin-chk? src]
     "pin-chk? is true when src comes from pgn->move function
      and false when src comes from pinned? function. I am using
@@ -89,13 +91,13 @@
           offsets (if pin-chk?
                     (concat (offsets piece) (pawn-takes-offsets piece) (pawn-offsets piece src))
                     (concat (offsets piece) (pawn-takes-offsets piece)))]
-    (get-moves board pin-chk? src offsets)))
+    (get-dsts board pin-chk? src offsets)))
   ([board pin-chk? src offsets]
     (let [piece  (board src)
           ptype  (piece :type)
           player (piece :player)
           steps  (if (#{\K \N \P} ptype) 1 8)]
-    (mapcat (partial get-moves board pin-chk? src player steps)
+    (mapcat (partial get-dsts board pin-chk? src player steps)
             offsets)))
   ([board pin-chk? src player steps offset]
     (let [dst   (add-vec offset src)
@@ -104,9 +106,46 @@
           (not (in-board? dst))         nil
           (when pin-chk? (pinned? board player src dst))
                                         nil
-          (nil? piece)                  (lazy-seq (cons dst (get-moves board pin-chk? dst player (dec steps) offset)))
+          (nil? piece)                  (lazy-seq (cons dst (get-dsts board pin-chk? dst player (dec steps) offset)))
           (hit-enemy? piece player)     (lazy-seq (cons dst nil))
           (hit-friendly? piece player)  nil))))
+
+(defn basic-move [src dst]
+  {:src src, :dst dst})
+
+(defn enhance-move [state move]
+  "Enhancing the basic pawn moves while filtering the invalid pawn moves."
+  (let [npson (pgn->pos (state :npson))
+        board (state :board)
+        src   (move :src)
+        piece (board src)
+        ptype (piece :type)
+        playr (piece :player)
+        dst   (move :dst)
+        [r f] dst
+        [x y] src
+        prv   (case playr
+                "w" dec
+                "b" inc)]
+  (match ptype
+    \P    (cond (= dst npson) [(assoc move :type "enpassant" :nul [(prv r) f])]
+                (not= f y)    (when (hit-enemy? (board dst) playr)
+                                (cond (#{1 8} r) (mapv #(assoc move :type "promotion" :piece {:player playr, :type %})
+                                                       [\K \R \B \Q])
+                                      :else      [move]))
+                (#{1 8} r)    (mapv #(assoc move :type "promotion" :piece {:player playr, :type %})
+                                    [\K \R \B \Q])
+                :else         [move])
+    :else [move])))
+
+(defn get-moves [state src]
+  (let [board (state :board)]
+  (->> (get-dsts board src)
+       (mapv (partial basic-move src))
+       (mapcat (partial enhance-move state)))))
+
+;; TODO
+(defn get-all-moves [state player])
 
 (defn ambiguity-hint [file rank]
   (match [file rank]
@@ -116,7 +155,7 @@
     :else     (fn [[r f]] (= [r f] [rank file]))))
 
 (defn valid-move? [board dst src]
-  (.contains (get-moves board src) dst))
+  (.contains (get-dsts board src) dst))
 
 (defn get-srcs
   ([board piece dst]

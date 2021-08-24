@@ -119,6 +119,9 @@
 (defn pos->pgn [[r f]]
   (str (file->char f) r))
 
+(defn pgn->pos [[f r]]
+  [(char->file f) (to-int r)])
+
 (defn get-pgn-moves [pgn]
   (->> (split pgn #" ")
        (partition 3)

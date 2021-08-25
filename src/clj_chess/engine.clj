@@ -39,5 +39,10 @@
        (mapv (partial basic-move src))
        (mapcat (partial enhance-move state)))))
 
-;; TODO
-(defn get-all-moves [state player])
+(defn get-all-moves [state player]
+  (let [board (state :board)
+        srcs  (filter-keys (where? :player player) board)]
+  (concat (mapcat (partial get-moves state) srcs)
+          (keep (partial pgn->moves state) ["O-O" "O-O-O"]))))
+
+(count (get-all-moves (fen->state "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") "w"))

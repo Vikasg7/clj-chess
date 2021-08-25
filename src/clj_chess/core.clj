@@ -51,9 +51,12 @@
   (let [[km rm] moves
         kingpos (km :src)
         rookpos (rm :src)
-        poses   (poses-between kingpos rookpos)]
-  (->> (mapv (partial attacked? board player) poses)
-       (every? nil?))))
+        poses   (poses-between kingpos rookpos)
+        not-attacked? (->> (mapv (partial attacked? board player) poses)
+                           (every? nil?))
+        nor-occupied? (->> (mapv board poses)
+                           (every? nil?))]
+  (and not-attacked? nor-occupied?)))
 
 (defn offsets [piece]
   (match piece
@@ -136,17 +139,13 @@
 
 ;; move = {:type, :piece, :src, :dst}
 (defn make-move [board move]
-  (let [{:keys [type src dst piece nul]} move]
-  (match type
-    "promotion" (assoc board src nil dst (move :piece))
-    "enpassant" (assoc board src nil dst (board src) nul nil)
-    :else       (assoc board src nil dst (board src)))))
-
-(defn make-moves [board moves]
-  (let [[move & res] moves]
-  (cond (nil? move) board
-        :else       (let [nboard (make-move board move)]
-                    (recur nboard res)))))
+  (if (sequential? move) 
+    (reduce make-move board move)
+    (let [{:keys [type src dst piece nul]} move]
+    (match type
+      "promotion" (assoc board src nil dst (move :piece))
+      "enpassant" (assoc board src nil dst (board src) nul nil)
+      :else       (assoc board src nil dst (board src))))))
 
 (defn pgn->moves [state pgn]
   (let [pgn     (->> (remove #{\x \+ \#} pgn)
@@ -297,7 +296,7 @@
   (if (empty? moves)
     (reduced (str "couldn't parse " pgn))
     (-> state
-        (update :board make-moves moves)
+        (update :board make-move moves)
         (update :playr toggle-player)
         (update :casle casle-ability playr pgn moves)
         (assoc  :npson (npson-sqr state moves))

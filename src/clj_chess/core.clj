@@ -1,7 +1,7 @@
 (ns clj-chess.core
   (:use [clj-chess.utils]
         [clj-chess.notation])
-  (:require [clojure.string :refer [split upper-case lower-case]]
+  (:require [clojure.string :refer [split]]
             [clojure.pprint :refer [pprint]]
             [clojure.core.match :refer [match]]))
 
@@ -48,13 +48,12 @@
          (mapv #(vector rank %)))))
 
 (defn can-castle? [board player moves]
-  (when (every? some? moves)
-    (let [[km rm] moves
-          kingpos (km :src)
-          rookpos (rm :src)
-          poses   (poses-between kingpos rookpos)]
-    (->> (mapv (partial attacked? board player) poses)
-         (every? nil?)))))
+  (let [[km rm] moves
+        kingpos (km :src)
+        rookpos (rm :src)
+        poses   (poses-between kingpos rookpos)]
+  (->> (mapv (partial attacked? board player) poses)
+       (every? nil?))))
 
 (defn offsets [piece]
   (match piece
@@ -110,43 +109,6 @@
           (hit-enemy? piece player)     (lazy-seq (cons dst nil))
           (hit-friendly? piece player)  nil))))
 
-(defn basic-move [src dst]
-  {:src src, :dst dst})
-
-(defn enhance-move [state move]
-  "Enhancing the basic pawn moves while filtering the invalid pawn moves."
-  (let [npson (pgn->pos (state :npson))
-        board (state :board)
-        src   (move :src)
-        piece (board src)
-        ptype (piece :type)
-        playr (piece :player)
-        dst   (move :dst)
-        [r f] dst
-        [x y] src
-        prv   (case playr
-                "w" dec
-                "b" inc)]
-  (match ptype
-    \P    (cond (= dst npson) [(assoc move :type "enpassant" :nul [(prv r) f])]
-                (not= f y)    (when (hit-enemy? (board dst) playr)
-                                (cond (#{1 8} r) (mapv #(assoc move :type "promotion" :piece {:player playr, :type %})
-                                                       [\K \R \B \Q])
-                                      :else      [move]))
-                (#{1 8} r)    (mapv #(assoc move :type "promotion" :piece {:player playr, :type %})
-                                    [\K \R \B \Q])
-                :else         [move])
-    :else [move])))
-
-(defn get-moves [state src]
-  (let [board (state :board)]
-  (->> (get-dsts board src)
-       (mapv (partial basic-move src))
-       (mapcat (partial enhance-move state)))))
-
-;; TODO
-(defn get-all-moves [state player])
-
 (defn ambiguity-hint [file rank]
   (match [file rank]
     [nil nil] identity
@@ -162,10 +124,15 @@
     (get-srcs board piece dst nil nil))
   ([board piece dst file rank]
     (let [srcs (->> (get-pos board piece)
-                    (filter (ambiguity-hint file rank)))]
-    (filter (partial valid-move? board dst) srcs))))
+                    (filterv (ambiguity-hint file rank)))]
+    (filterv (partial valid-move? board dst) srcs))))
 
-(def get-src (comp first get-srcs))
+(defn get-src [& args]
+  "Moves with multiple sources ie. amibigious moves
+   are marked as invalid aka nil"
+  (let [srcs (apply get-srcs args)]
+  (when (= 1 (count srcs))
+    (first srcs))))
 
 ;; move = {:type, :piece, :src, :dst}
 (defn make-move [board move]
@@ -182,15 +149,19 @@
                     (recur nboard res)))))
 
 (defn pgn->moves [state pgn]
-  (let [pgn    (->> (remove #{\x \+ \#} pgn)
-                    (mapv to-int))
-        player (state :playr)
-        board  (state :board)
-        enpson (->> (state :npson)
-                    (mapv to-int))
-        prv    (case player
-                 "w" dec
-                 "b" inc)]
+  (let [pgn     (->> (remove #{\x \+ \#} pgn)
+                     (mapv to-int))
+        player  (state :playr)
+        board   (state :board)
+        castle  (state :casle)
+        enpson  (->> (state :npson)
+                     (mapv to-int))
+        prv     (case player
+                  "w" dec
+                  "b" inc)
+        tgl     (case player 
+                  "w" upper-case
+                  "b" lower-case)]
   (match pgn
     ;; :king-side-castle
     [\O \- \O]        (let [moves (case player
@@ -198,14 +169,18 @@
                                          {:src [1 8], :dst [1 6]}]
                                     "b" [{:src [8 5], :dst [8 7]},
                                          {:src [8 8], :dst [8 6]}])]
-                      (when (can-castle? board player moves) moves))
+                      (when (and (.contains castle (tgl \k))
+                                 (can-castle? board player moves))
+                        moves))
     ;; :queen-side-castle
     [\O \- \O \- \O]  (let [moves (case player
                                     "w" [{:src [1 5], :dst [1 3]},
                                          {:src [1 1], :dst [1 4]}]
                                     "b" [{:src [8 5], :dst [8 3]},
                                          {:src [8 1], :dst [8 4]}])]
-                      (when (can-castle? board player moves) moves))
+                      (when (and (.contains castle (tgl \q))
+                                 (can-castle? board player moves)) 
+                        moves))
     ;; :pawn-move
     [f r]             (let [f  (char->file f)
                             pc {:player player :type \P}]
@@ -301,11 +276,11 @@
 
 (defn casle-ability [ability player [fst & res :as pgn] [move]]
   (let [tgl (case player 
-              "w" (comp char-seq upper-case)
-              "b" (comp char-seq lower-case))
-        kq  (into #{} (mapcat tgl "kq"))
-        q   (into #{} (mapcat tgl "q"))
-        k   (into #{} (mapcat tgl "k"))
+              "w" upper-case
+              "b" lower-case)
+        kq  (into #{} (mapv tgl "kq"))
+        q   (into #{} (mapv tgl "q"))
+        k   (into #{} (mapv tgl "k"))
         fyl (second (move :src))]
   (cond (= pgn "O-O")   (remove kq ability)
         (= pgn "O-O-O") (remove kq ability)

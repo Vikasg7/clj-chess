@@ -6,6 +6,12 @@
 (defn lower-case? [x]
   (Character/isLowerCase x))
 
+(defn upper-case [x]
+  (Character/toUpperCase x))
+
+(defn lower-case [x]
+  (Character/toLowerCase x))
+
 (defn is-letter? [x]
   (Character/isLetter x))
 

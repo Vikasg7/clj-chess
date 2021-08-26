@@ -120,7 +120,7 @@
   (str (file->char f) r))
 
 (defn pgn->pos [[f r]]
-  [(char->file f) (to-int r)])
+  [(to-int r) (char->file f)])
 
 (defn get-pgn-moves [pgn]
   (->> (split pgn #" ")

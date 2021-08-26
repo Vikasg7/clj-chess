@@ -35,9 +35,9 @@
 
 (def char-seq seq)
 
-(defn debug [& vals]
-  (apply println vals)
-  vals)
+(defn debug [val]
+  (println val)
+  val)
 
 (defn to-int
   ([v]

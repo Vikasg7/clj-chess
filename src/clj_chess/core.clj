@@ -114,14 +114,16 @@
           ptmvs (->> (pawn-takes-offsets piece)
                      (mapcat (partial get-dsts board player src steps))
                      (filter #(or (hit-enemy? (board %) player)
-                                  (= npson-sqr %))))]
+                                  (= npson-sqr %))))
+          ;; forward-pawn-moves
+          fpmvs (when (= move-type :move)
+                (->> (pawn-offsets piece src)
+                     (mapcat (partial get-dsts board player src steps))
+                     (remove #(or (occupied? board %)
+                                  (any-occupied? board (poses-between src %))))))]
     (case move-type 
-      :move (let [fpmvs (->> (pawn-offsets piece src) ;; forward-pawn-moves
-                             (mapcat (partial get-dsts board player src steps))
-                             (remove #(or (occupied? board %)
-                                          (any-occupied? board (poses-between src %)))))]
-            (->> (concat pcmvs fpmvs ptmvs)
-                 (remove (partial pinned? board player src))))
+      :move (->> (concat pcmvs fpmvs ptmvs)
+                 (remove (partial pinned? board player src)))
       :atak (concat pcmvs ptmvs))))
   ([board player src steps offset]
     (let [dst   (add-vec offset src)
@@ -228,19 +230,17 @@
     [(f :guard lower-case?) t r]
                       (let [[f t] (mapv char->file [f t])
                             pc    {:player player :type \P}]
-                      (when     (hit-enemy? (board [r t]) player)
                       (when-let [src (get-src state pc [r t] f nil)]
-                        [{:src src, :dst [r t]}])))
+                        [{:src src, :dst [r t]}]))
     ;; :unambigious-pawn-promotion
     [(f :guard lower-case?) t r \= p]
                       (let [[f t] (mapv char->file [f t])
                             pc    {:player player :type \P}]
-                      (when     (hit-enemy? (board [r t]) player)
                       (when-let [src (get-src state pc [r t] f nil)]
                         [{:type "promotion",
                           :piece {:player player, :type p},
                           :src   src, 
-                          :dst   [r t]}])))
+                          :dst   [r t]}]))
     ;; :piece-move
     [p f r]           (let [f  (char->file f)
                             pc {:player player, :type p}]
@@ -322,6 +322,7 @@
                 hfmvs]} state]
   (if (empty? moves)
     (reduced (str "couldn't parse " pgn))
+;;(else
     {:board (make-move board moves)
      :playr (toggle-player playr)
      :casle (casle-ability casle playr pgn moves)

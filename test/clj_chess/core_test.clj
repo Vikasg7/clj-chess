@@ -60,7 +60,13 @@
                   pgns  ["exf6"]]
             (->> (play-moves state pgns)
                  (state->fen)))
-            "r1bqkbnr/ppppp1pp/2n2P2/8/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 3"))))
+            "r1bqkbnr/ppppp1pp/2n2P2/8/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 3")))
+  (testing "Testing effect of rook captures on castling"
+    (is (=  (let [state (fen->state "r1bqkb1r/pppppppp/1N4N1/8/8/1n4n1/PPPPPPPP/R1BQKB1R w KQkq - 0 1")
+                  pgns (get-pgn-moves "1. Nxa8 Nxa1 2. Nxh8 Nxh1")]
+            (->> (play-moves state pgns)
+                 (state->fen)))
+            "N1bqkb1N/pppppppp/8/8/8/8/PPPPPPPP/n1BQKB1n w - - 0 3"))))
 
 (deftest get-dsts-test
   (testing "King moves - 1"

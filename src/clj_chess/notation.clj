@@ -124,5 +124,5 @@
 
 (defn get-pgn-moves [pgn]
   (->> (split pgn #" ")
-       (partition 3)
+       (partition-all 3)
        (mapcat (partial drop 1))))

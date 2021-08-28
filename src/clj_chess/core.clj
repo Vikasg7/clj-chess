@@ -296,21 +296,28 @@
         :else               (inc cnt)))
 
 (defn casle-ability [ability player [fst & res :as pgn] [move]]
-  (let [tgl (case player 
-              "w" upper-case
-              "b" lower-case)
-        kq  (into #{} (mapv tgl "kq"))
-        q   (into #{} (mapv tgl "q"))
-        k   (into #{} (mapv tgl "k"))
-        fyl (second (move :src))]
-  (cond (= pgn "O-O")   (remove kq ability)
-        (= pgn "O-O-O") (remove kq ability)
-        (= fst \K)      (remove kq ability) ; king-move?
-        (= fst \R)      (match fyl          ; rook-move?
-                          1     (remove q ability)
-                          8     (remove k ability)
-                          :else ability)
-        :else           ability)))
+  (when (some? ability)
+    (let [frn (case player 
+                "w" upper-case
+                "b" lower-case)
+          kq  (into #{} (mapv frn "kq"))
+          q   (into #{} (mapv frn "q"))
+          k   (into #{} (mapv frn "k"))
+          fyl (second (move :src))
+          dst (move :dst)]
+    (cond (= pgn "O-O")   (remove kq ability)
+          (= pgn "O-O-O") (remove kq ability)
+          (= fst \K)      (remove kq ability) ; king-move?
+          (= fst \R)      (match fyl          ; rook-move?
+                            1     (remove q ability)
+                            8     (remove k ability)
+                            :else ability)
+          ;; handling rook captures
+          (= dst [1 1])   (remove #{\Q} ability)
+          (= dst [1 8])   (remove #{\K} ability)
+          (= dst [8 1])   (remove #{\q} ability)
+          (= dst [8 8])   (remove #{\k} ability)
+          :else           ability))))
 
 (defn play-move [state pgn]
   (let [moves (pgn->moves state pgn)

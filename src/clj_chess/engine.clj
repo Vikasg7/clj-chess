@@ -34,21 +34,40 @@
         npson (pgn->pos (state :npson))]
   (->> (get-dsts board :move npson src)
        (mapv (partial basic-move src))
-       (mapcat (partial enhance-move state)))))
+       (mapcat (partial enhance-move state))
+       (mapv vector))))
 
-(defn get-all-moves [player state]
+(defn get-all-moves [state]
   (let [board (state :board)
-        srcs  (filter-keys (where? :player player) board)]
+        playr (state :playr)
+        srcs  (filter-keys (where? :player playr) board)]
   (concat (mapcat (partial get-moves state) srcs)
-          (keep (partial pgn->moves state) ["O-O" "O-O-O"]))))
+          (keep (partial pgn->move state) ["O-O" "O-O-O"]))))
 
-(let [fens ["rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-            "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8"
-            "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10"
-            "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1"
-            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
-            "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"]
-      mvcnt (comp count
-                  (partial get-all-moves "w")
-                  fen->state)]
-(mapv mvcnt fens))
+;; (defn perft 
+;;   ([state depth]
+;;     (let [moves (get-all-moves state)]
+;;     (cond (= 1 depth) (count moves)
+;;           :else       (->> (pmap (partial perft state depth) moves)
+;;                            (reduce +)))))
+;;   ([state depth move]
+;;     (perft (play-move state move) (dec depth))))
+
+(defn perft 
+  ([state depth]
+    (let [moves (get-all-moves state)]
+    (cond (= 1 depth) (count moves)
+          :else       (->> (map (partial perft state depth) moves)
+                           (reduce +)))))
+  ([state depth [mv :as move]]
+    (let [mvt (str (pos->pgn (mv :src)) (pos->pgn (mv :dst)))
+          cnt (perft (play-move state move) (dec depth))]
+    (println (state->fen state) mvt cnt)
+    cnt)))
+
+(let [state (fen->state "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1")]
+(perft state 2))
+
+(pprint (get-all-moves (fen->state "8/2p5/3p4/KP5r/1R2Pp1k/8/6P1/8 b - e3 0 2")))
+
+(state->fen (play-pgn (fen->state "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 2") "e4"))

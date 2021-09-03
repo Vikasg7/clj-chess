@@ -1,16 +1,12 @@
 (ns clj-chess.core
   (:use [clj-chess.utils]
-        [clj-chess.notation])
+        [clj-chess.notation]
+        [clj-chess.chess-utils])
   (:require [clojure.string :refer [split]]
             [clojure.pprint :refer [pprint]]
             [clojure.core.match :refer [match]]))
 
 (declare get-dsts make-move)
-
-(def toggle-player {"w" "b", "b" "w"})
-
-(defn get-pos [board piece]
-  (filter-keys (partial = piece) board))
 
 (defn attacked? [board player pos]
   (let [enemies  (filter-keys (where? :player (toggle-player player)) board)]
@@ -22,35 +18,9 @@
         king-pos (first (get-pos board king))]
   (attacked? board player king-pos)))
 
-(defn pinned? [board player src dst]
-  (let [nboard (make-move board {:src src, :dst dst})]
+(defn pinned? [board player move]
+  (let [nboard (make-move board move)]
   (in-check? nboard player)))
-
-;; pos = [rank file]
-(defn in-board? [pos]
-  (every? (partial in-range? 1 8) pos))
-
-(defn hit-friendly? [piece player]
-  (when piece
-    (= player (piece :player))))
-
-(defn hit-enemy? [piece player]
-  (when piece
-    (not= player (piece :player))))
-
-(defn poses-between 
-  ([[r f :as x] [rr ff :as y]]
-    (cond (= r rr) (if (< f ff)
-                     (poses-between x y [0 1])
-                     (poses-between x y [0 -1]))
-          (= f ff) (if (< r rr)
-                     (poses-between x y [1 0])
-                     (poses-between x y [-1 0]))
-          :else    nil))
-  ([from-pos to-pos offset]
-    (->> (iterate (partial add-vec offset) from-pos)
-         (take-while (partial not= to-pos))
-         (remove #{from-pos}))))
 
 (defn castle-moves [king-move]
   (let [[r f :as src] (king-move :src)
@@ -65,8 +35,8 @@
         kingpos (km :src)
         rookpos (rm :src)
         poses   (poses-between kingpos rookpos)
-        not-attacked? (->> (take 2 poses)
-                           (mapv (partial attacked? board player))
+        not-attacked? (->> (cons kingpos (take 2 poses))
+                           (map (partial attacked? board player))
                            (every? nil?))
         nor-occupied? (->> (mapv board poses)
                            (every? nil?))]
@@ -95,16 +65,25 @@
     {:player "b" :type \P} [[-1 1] [-1 -1]]
     :else                  nil))
 
-(defn occupied? [board pos]
-  (not (nil? (board pos))))
-
-(defn any-occupied? [board poses]
-  (some (partial occupied? board) poses))
-
-(defn prv-sqr [player pos]
-  (case player
-    "w" (add-vec [-1 0] pos)
-    "b" (add-vec [1 0] pos)))
+(defn get-pawn-dsts [board move-type npson-sqr src]
+  (let [piece  (board src)
+        player (piece :player)
+        ;; pawn-takes-pins
+        ptpin (->> (pawn-takes-offsets piece)
+                   (mapcat (partial get-dsts board player src 1)))
+        ;; pawn-takes-moves
+        ptmvs (filter #(or (hit-enemy? (board %) player)
+                           (= npson-sqr %))
+                      ptpin)
+        ;; forward-pawn-moves
+        fpmvs (when (= move-type :move)
+                (->> (pawn-offsets piece src)
+                     (mapcat (partial get-dsts board player src 1))
+                     (remove #(or (occupied? board %)
+                                  (any-occupied? board (poses-between src %))))))]
+  (case move-type 
+    :move (concat fpmvs ptmvs)
+    :atak ptpin)))
 
 (defn get-dsts
   ([board src]
@@ -113,29 +92,12 @@
     (get-dsts board move-type nil src))
   ([board move-type npson-sqr src]
     (let [piece   (board src)
-          ptype   (piece :type)
           player  (piece :player)
-          steps   (if (#{\K \N \P} ptype) 1 8)
-          ;; piece-moves
-          pcmvs   (mapcat (partial get-dsts board player src steps)
-                          (offsets piece))
-          ;; pawn-takes-pins
-          ptpin (->> (pawn-takes-offsets piece)
-                     (mapcat (partial get-dsts board player src steps)))
-          ;; pawn-takes-moves
-          ptmvs (->> ptpin
-                     (filter #(or (hit-enemy? (board %) player)
-                                  (= npson-sqr %))))
-          ;; forward-pawn-moves
-          fpmvs (when (= move-type :move)
-                (->> (pawn-offsets piece src)
-                     (mapcat (partial get-dsts board player src steps))
-                     (remove #(or (occupied? board %)
-                                  (any-occupied? board (poses-between src %))))))]
-    (case move-type 
-      :move (->> (concat pcmvs fpmvs ptmvs)
-                 (remove (partial pinned? board player src)))
-      :atak (concat pcmvs ptpin))))
+          steps   (if (#{\K \N \P} (piece :type)) 1 8)]
+    (case (pawn? piece)
+      true  (get-pawn-dsts board move-type npson-sqr src)
+      false (mapcat (partial get-dsts board player src steps)
+                    (offsets piece)))))
   ([board player src steps offset]
     (let [dst   (add-vec offset src)
           piece (board dst)]
@@ -145,34 +107,13 @@
           (hit-enemy? piece player)     (lazy-seq (cons dst nil))
           (hit-friendly? piece player)  nil))))
 
-(defn ambiguity-hint [file rank]
+(defn ambiguity-hint [[file rank]]
   (match [file rank]
     [nil nil] identity
     [_   nil] (fn [[r f]] (= f file))
     [nil   _] (fn [[r f]] (= r rank))
     :else     (fn [[r f]] (= [r f] [rank file]))))
 
-(defn valid-move? [state dst src]
-  (let [{:keys [board npson]} state]
-  (.contains (get-dsts board :move (pgn->pos npson) src) dst)))
-
-(defn get-srcs
-  ([state piece dst]
-    (get-srcs state piece dst nil nil))
-  ([state piece dst file rank]
-    (let [board (state :board)
-          srcs  (->> (get-pos board piece)
-                     (filterv (ambiguity-hint file rank)))]
-    (filterv (partial valid-move? state dst) srcs))))
-
-(defn get-src [& args]
-  "Moves with multiple sources ie. amibigious moves
-   are marked as invalid aka nil"
-  (let [srcs (apply get-srcs args)]
-  (when (= 1 (count srcs))
-    (first srcs))))
-
-;; move = {:type, :piece, :src, :dst}
 (defn make-move [board move]
   (let [{:keys [type src dst piece nul]} move]
   (match type
@@ -180,6 +121,56 @@
     "enpassant" (assoc board src nil dst (board src) nul nil)
     "castle"    (reduce make-move board (castle-moves move))
     :else       (assoc board src nil dst (board src)))))
+
+(defn basic-move [src dst]
+  {:src src, :dst dst})
+
+(defn enhance-npson [piece npson playr move]
+  (if-not (pawn? piece)
+    move
+; (else
+    (let [dst   (move :dst)
+          [r f] dst
+          prv   (case playr
+                  "w" dec
+                  "b" inc)]
+    (cond (= dst npson) (assoc move :type "enpassant", :nul [(prv r) f])
+          :else         move))))
+
+(defn enhance-promotion [piece playr move]
+  (if-not (pawn? piece)
+    [move]
+; (else
+    (let [[r f] (move :dst)]
+    (cond (#{1 8} r)  (mapv #(assoc move :type "promotion" :piece {:player playr, :type %})
+                            [\K \R \B \Q])
+          :else       [move]))))
+
+(defn get-moves [state src]
+  (let [board (state :board)
+        npson (pgn->pos (state :npson))
+        piece (board src)
+        playr (piece :player)]
+  (->> (get-dsts board :move npson src)
+       (mapv (comp (partial enhance-npson piece npson playr)
+                   (partial basic-move src)))
+       (remove (partial pinned? board playr))
+       (mapcat (partial enhance-promotion piece playr)))))
+
+(defn get-move
+  ([state piece dst]
+    (get-move state piece dst [nil nil] nil))
+  ([state piece dst hint]
+    (get-move state piece dst hint nil))
+  ([state piece dst hint promoted]
+    (let [board (state :board)
+          srcs  (->> (get-pos board piece)
+                     (filterv (ambiguity-hint hint)))]
+    (when-not (empty? srcs)
+      (let [moves (->> (mapcat (partial get-moves state) srcs)
+                      (filterv (every-pred (where? :dst dst)
+                                           (where? (comp :type :piece) promoted))))]
+      (when (has-one? moves) (first moves)))))))
 
 (defn pgn->move [state pgn]
   (let [pgn     (->> (remove #{\x \+ \#} pgn)
@@ -211,69 +202,46 @@
     ;; :pawn-move
     [f r]             (let [f  (char->file f)
                             pc {:player player :type \P}]
-                      (when-let [src (get-src state pc [r f] f nil)] 
-                        {:src src, :dst [r f]}))
+                      (get-move state pc [r f] [f nil]))
     ;; :pawn-promotion
     [f r \= p]        (let [f  (char->file f)
                             pc {:player player :type \P}]
-                      (when-let [src (get-src state pc [r f] f nil)]
-                        {:type "promotion",
-                         :piece {:player player, :type p},
-                         :src   src,
-                         :dst   [r f]}))
+                      (get-move state pc [r f] [f nil] p))
     ;; :enpassant
     [(f :guard lower-case?) & ([t r] :guard #(= npson %))]
                       (let [[f t] (mapv char->file [f t])
                             pc    {:player player :type \P}]
-                      (when-let [src (get-src state pc [r t] f nil)]
-                        {:type "enpassant",
-                         :src  src,
-                         :dst  [r t]
-                         :nul  [(prv r) t]}))
+                      (get-move state pc [r t] [f nil]))
     ;; :unambigious-pawn-move
     [(f :guard lower-case?) t r]
                       (let [[f t] (mapv char->file [f t])
                             pc    {:player player :type \P}]
-                      (when-let [src (get-src state pc [r t] f nil)]
-                        {:src src, :dst [r t]}))
+                      (get-move state pc [r t] [f nil]))
     ;; :unambigious-pawn-promotion
     [(f :guard lower-case?) t r \= p]
                       (let [[f t] (mapv char->file [f t])
                             pc    {:player player :type \P}]
-                      (when-let [src (get-src state pc [r t] f nil)]
-                        {:type "promotion",
-                         :piece {:player player, :type p},
-                         :src   src, 
-                         :dst   [r t]}))
+                      (get-move state pc [r t] [f nil] p))
     ;; :piece-move
     [p f r]           (let [f  (char->file f)
                             pc {:player player, :type p}]
-                      (when-let [src (get-src state pc [r f])]
-                        {:src src, :dst [r f]}))
+                      (get-move state pc [r f]))
     ;; :unambigious-piece-move (hint: file)
-    [p (f :guard is-letter?) t r]         
+    [p (f :guard is-letter?) t r]
                       (let [[f t] (mapv char->file [f t])
                             pc    {:player player, :type p}]
-                      (when-let [src (get-src state pc [r t] f nil)]
-                        {:src src, :dst [r t]}))
+                      (get-move state pc [r t] [f nil]))
     ;; :unambigious-piece-move (hint: rank)
     [p (g :guard int?) t r]
                       (let [t  (char->file t)
                             pc {:player player, :type p}]
-                      (when-let [src (get-src state pc [r t] nil g)]
-                        {:src src, :dst [r t]}))
+                      (get-move state pc [r t] [nil g]))
     ;; :unambigious-piece-move (hint: file, rank)
     [p f g t r]       (let [[f t] (mapv char->file [f t])
                             pc    {:player player, :type p}]
-                      (when-let [src (get-src state pc [r t] f g)]
-                        {:src src, :dst [r t]}))
+                      (get-move state pc [r t] [f g]))
     ;; :invalid-pgn
     :else             nil)))
-
-(defn rank-diff [move]
-  (let [[r f] (move :src)
-        [a b] (move :dst)]
-  (Math/abs ^Integer (- r a))))
 
 (defn npson-sqr [state move]
   (let [board (state :board)
@@ -294,9 +262,6 @@
     "w" cnt
     "b" (inc cnt)))
 
-(defn pawn? [piece]
-  (= (piece :type) \P))
-
 (defn hfmvs-clock [cnt board move]
   (let [{:keys [src dst]} move
         piece (board src)]
@@ -304,30 +269,10 @@
         (pawn? piece)         0 ; pawn-move?
         :else                 (inc cnt))))
 
-(defn king? [piece]
-  (= (piece :type) \K))
-
-(defn rook? [piece]
-  (= (piece :type) \R))
-
-(def rank first)
-(def file second)
-(def invalid? empty?)
-
-(defn castle-side? [[km rm :as moves]]
-  (when (= (count moves) 2)
-    (let [rook-pos (rm :src)]
-    (case (file rook-pos)
-      1 :queen
-      8 :king))))
-
-(defn castle? [move]
-  (= (move :type) "castle"))
-
 (defn castle-ability [ability board player move]
   (if (empty? ability)
     ability
-;;(else
+; (else
     (let [frn (case player 
                 "w" upper-case
                 "b" lower-case)

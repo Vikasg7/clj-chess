@@ -23,7 +23,7 @@
 
 (defn where? [k v]
   (fn [mp]
-    (when mp (= v (mp k)))))
+    (when mp (= v (k mp)))))
 
 (defn filter-keys [f mp]
   (for [[k v] mp

@@ -12,7 +12,7 @@
 
 (deftest pinned?-test
   (testing "c4 is pinned"
-    (is (pinned? (parse-board "8/4k3/8/8/1KP3r1/8/8/8") "w" [4 3] [5 3]))))
+    (is (pinned? (parse-board "8/4k3/8/8/1KP3r1/8/8/8") "w" {:src [4 3] :dst [5 3]}))))
 
 (deftest npson-srq-test
   (testing "f6 is npson target for white"
@@ -67,14 +67,6 @@
             (->> (play-pgns state pgns)
                  (state->fen)))
             "N1bqkb1N/pppppppp/8/8/8/8/PPPPPPPP/n1BQKB1n w - - 0 3"))))
-
-(deftest get-dsts-test
-  (testing "King moves - 1"
-    (is (= (get-dsts (parse-board "8/k7/8/3p4/8/4K3/8/8") [3 5])
-           [[3 4] [3 6] [2 4] [2 5] [2 6] [4 4] [4 6]])))
-  (testing "King moves - 2"
-    (is (= (get-dsts (parse-board "8/k2p4/8/8/4K3/8/8/8") [4 5])
-           [[4 4] [4 6] [3 4] [3 5] [3 6] [5 4] [5 5] [5 6]]))))
 
 (deftest castle-moves-test
   (testing "All Castling moves"

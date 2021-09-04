@@ -8,10 +8,12 @@
 
 (declare get-dsts make-move)
 
-(defn attacked? [board player pos]
-  (let [enemies  (filter-keys (where? :player (toggle-player player)) board)]
-  (->> (mapcat (partial get-dsts board :atak) enemies)
-       (some (partial = pos)))))
+(defn attacked? [board player poses]
+  (let [enemies   (filter-keys (where? :player (toggle-player player)) board)
+        enm-poses (mapcat (partial get-dsts board :atak) enemies)]
+  (case (list-of-list? poses)
+    true  (any-threaten? enm-poses poses)
+    false (threaten? enm-poses poses))))
 
 (defn in-check? [board player]
   (let [king     {:player player, :type \K}
@@ -35,12 +37,10 @@
         kingpos (km :src)
         rookpos (rm :src)
         poses   (poses-between kingpos rookpos)
-        not-attacked? (->> (cons kingpos (take 2 poses))
-                           (map (partial attacked? board player))
-                           (every? nil?))
-        nor-occupied? (->> (mapv board poses)
-                           (every? nil?))]
-  (and not-attacked? nor-occupied?)))
+        ;; positions from king-pos to king dest after castle
+        k-poses (cons kingpos (take 2 poses))]
+  (and (not (any-occupied? board poses)) 
+       (not (attacked? board player k-poses)))))
 
 (defn offsets [piece]
   (match piece
@@ -143,7 +143,7 @@
 ; (else
     (let [[r f] (move :dst)]
     (cond (#{1 8} r)  (mapv #(assoc move :type "promotion" :piece {:player playr, :type %})
-                            [\K \R \B \Q])
+                            [\N \R \B \Q])
           :else       [move]))))
 
 (defn get-moves [state src]
@@ -157,6 +157,23 @@
        (remove (partial pinned? board playr))
        (mapcat (partial enhance-promotion piece playr)))))
 
+(defn get-all-moves [state]
+  (let [board (state :board)
+        playr (state :playr)
+        srcs  (filter-keys (where? :player playr) board)]
+  (concat (mapcat (partial get-moves state) srcs)
+          (keep (partial pgn->move state) ["O-O" "O-O-O"]))))
+
+(defn get-potential-moves [state src]
+  (let [board (state :board)
+        npson (pgn->pos (state :npson))
+        piece (board src)
+        playr (piece :player)]
+  (->> (get-dsts board :move npson src)
+       (mapv (comp (partial enhance-npson piece npson playr)
+                   (partial basic-move src)))
+       (mapcat (partial enhance-promotion piece playr)))))
+
 (defn get-move
   ([state piece dst]
     (get-move state piece dst [nil nil] nil))
@@ -164,13 +181,21 @@
     (get-move state piece dst hint nil))
   ([state piece dst hint promoted]
     (let [board (state :board)
+          playr (piece :player)
           srcs  (->> (get-pos board piece)
                      (filterv (ambiguity-hint hint)))]
     (when-not (empty? srcs)
-      (let [moves (->> (mapcat (partial get-moves state) srcs)
-                      (filterv (every-pred (where? :dst dst)
-                                           (where? (comp :type :piece) promoted))))]
+      (let [moves (->> (mapcat (partial get-potential-moves state) srcs)
+                       (filterv (every-pred (where? :dst dst)
+                                            (where? (comp :type :piece) promoted)))
+                       (remove (partial pinned? board playr)))]
       (when (has-one? moves) (first moves)))))))
+
+(def castle-move
+  {:king-side  {"w" {:type "castle" :src [1 5], :dst [1 7]} 
+                "b" {:type "castle" :src [8 5], :dst [8 7]}},
+   :queen-side {"w" {:type "castle" :src [1 5], :dst [1 3]}
+                "b" {:type "castle" :src [8 5], :dst [8 3]}}})
 
 (defn pgn->move [state pgn]
   (let [pgn     (->> (remove #{\x \+ \#} pgn)
@@ -189,15 +214,11 @@
   (match pgn
     ;; :king-side-castle
     [\O \- \O]        (when (.contains castle (tgl \k))
-                        (let [move (case player
-                                     "w" {:type "castle" :src [1 5], :dst [1 7]}
-                                     "b" {:type "castle" :src [8 5], :dst [8 7]})]
+                        (let [move (get-in castle-move [:king-side player])]
                         (when (can-castle? board player move) move)))
     ;; :queen-side-castle
     [\O \- \O \- \O]  (when (.contains castle (tgl \q))
-                        (let [move (case player
-                                      "w" {:type "castle" :src [1 5], :dst [1 3]}
-                                      "b" {:type "castle" :src [8 5], :dst [8 3]})]
+                        (let [move (get-in castle-move [:queen-side player])]
                         (when (can-castle? board player move) move)))
     ;; :pawn-move
     [f r]             (let [f  (char->file f)

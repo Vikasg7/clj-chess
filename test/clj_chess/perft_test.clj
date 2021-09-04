@@ -1,8 +1,8 @@
-(ns clj-chess.engine-test
+(ns clj-chess.perft-test
   (:use [clojure.test]
         [clj-chess.notation]
         [clj-chess.core]
-        [clj-chess.engine])
+        [clj-chess.perft])
   (:require [clojure.string :refer [split]]))
 
 (deftest get-moves-test
@@ -42,6 +42,10 @@
   (testing "Position 5"
     (is (= (let [state (fen->state "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8")]
            (mapv #(perft state %) [1 2 3]))
-           [44 1486 62379]))))
+           [44 1486 62379])))
+  (testing "Position 6"
+    (is (= (let [state (fen->state "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10")]
+           (mapv #(perft state %) [1 2 3]))
+           [46 2079 89890]))))
 
 (run-tests)

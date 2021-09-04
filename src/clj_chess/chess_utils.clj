@@ -4,9 +4,6 @@
             [clojure.pprint :refer [pprint]]
             [clojure.core.match :refer [match]]))
 
-(defn has-one? [coll]
-  (= 1 (count coll)))
-
 (def toggle-player {"w" "b", "b" "w"})
 
 (defn get-pos [board piece]
@@ -43,6 +40,12 @@
 (defn any-occupied? [board poses]
   (some (partial occupied? board) poses))
 
+(defn threaten? [enm-poses pos]
+  (some (partial = pos) enm-poses))
+
+(defn any-threaten? [enm-poses poses]
+  (some (partial threaten? enm-poses) poses))
+
 (defn prv-sqr [player pos]
   (case player
     "w" (add-vec [-1 0] pos)
@@ -74,4 +77,4 @@
     (let [rook-pos (rm :src)]
     (case (file rook-pos)
       1 :queen
-      8 :king))))
+      8 :king))))    

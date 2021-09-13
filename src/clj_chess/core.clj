@@ -6,11 +6,11 @@
             [clojure.pprint :refer [pprint]]
             [clojure.core.match :refer [match]]))
 
-(declare get-dsts make-move)
+(declare get-dsts make-move pgn->move)
 
 (defn attacked? [board player poses]
   (let [enemies   (filter-keys (where? :player (toggle-player player)) board)
-        enm-poses (mapcat (partial get-dsts board :atak) enemies)]
+        enm-poses (mapcat (partial get-dsts board) enemies)]
   (case (list-of-list? poses)
     true  (any-threaten? enm-poses poses)
     false (threaten? enm-poses poses))))
@@ -65,39 +65,38 @@
     {:player "b" :type \P} [[-1 1] [-1 -1]]
     :else                  nil))
 
-(defn get-pawn-dsts [board move-type npson-sqr src]
-  (let [piece  (board src)
-        player (piece :player)
-        ;; pawn-takes-pins
-        ptpin (->> (pawn-takes-offsets piece)
-                   (mapcat (partial get-dsts board player src 1)))
-        ;; pawn-takes-moves
-        ptmvs (filter #(or (hit-enemy? (board %) player)
-                           (= npson-sqr %))
-                      ptpin)
-        ;; forward-pawn-moves
-        fpmvs (when (= move-type :move)
-                (->> (pawn-offsets piece src)
-                     (mapcat (partial get-dsts board player src 1))
-                     (remove #(or (occupied? board %)
-                                  (any-occupied? board (poses-between src %))))))]
-  (case move-type 
-    :move (concat fpmvs ptmvs)
-    :atak ptpin)))
+(defn pawn-pin-dsts [board piece player src]
+  (->> (pawn-takes-offsets piece)
+       (mapcat (partial get-dsts board player src 1))))
+
+(defn pawn-takes-dsts [board piece player npson-sqr src]
+  (->> (pawn-pin-dsts board piece player src)
+       (filterv #(or (hit-enemy? (board %) player)
+                     (= npson-sqr %)))))
+
+(defn forward-pawn-dsts [board piece player src]
+  (->> (pawn-offsets piece src)
+       (mapcat (partial get-dsts board player src 1))
+       (remove #(or (occupied? board %)
+                    (any-occupied? board (poses-between src %))))))
+
+(defn piece-dsts [board piece player src]
+  (let [steps (if (#{\K \N \P} (piece :type)) 1 8)]
+  (->> (offsets piece)
+       (mapcat (partial get-dsts board player src steps)))))
 
 (defn get-dsts
   ([board src]
-    (get-dsts board :move nil src))
-  ([board move-type src]
-    (get-dsts board move-type nil src))
-  ([board move-type npson-sqr src]
     (let [piece   (board src)
-          player  (piece :player)
-          steps   (if (#{\K \N \P} (piece :type)) 1 8)]
-    (case (pawn? piece)
-      true  (get-pawn-dsts board move-type npson-sqr src)
-      false (mapcat (partial get-dsts board player src steps)
-                    (offsets piece)))))
+          player  (piece :player)]
+    (cond (pawn? piece) (pawn-pin-dsts board piece player src)
+          :else         (piece-dsts board piece player src))))
+  ([board npson-sqr src]
+    (let [piece   (board src)
+          player  (piece :player)]
+    (cond (pawn? piece) (concat (pawn-takes-dsts board piece player npson-sqr src)
+                                (forward-pawn-dsts board piece player src))
+          :else         (piece-dsts board piece player src))))
   ([board player src steps offset]
     (let [dst   (add-vec offset src)
           piece (board dst)]
@@ -151,7 +150,7 @@
         npson (pgn->pos (state :npson))
         piece (board src)
         playr (piece :player)]
-  (->> (get-dsts board :move npson src)
+  (->> (get-dsts board npson src)
        (mapv (comp (partial enhance-npson piece npson playr)
                    (partial basic-move src)))
        (remove (partial pinned? board playr))
@@ -169,7 +168,7 @@
         npson (pgn->pos (state :npson))
         piece (board src)
         playr (piece :player)]
-  (->> (get-dsts board :move npson src)
+  (->> (get-dsts board npson src)
        (mapv (comp (partial enhance-npson piece npson playr)
                    (partial basic-move src)))
        (mapcat (partial enhance-promotion piece playr)))))
@@ -327,7 +326,9 @@
                 npson
                 flmvs
                 hfmvs]} state]
-  (when-not (invalid? move)
+  (if (invalid? move)
+    (throw (Error. "Invalid Move"))
+; (else
     {:board (make-move board move)
      :playr (toggle-player playr)
      :casle (castle-ability casle board playr move)

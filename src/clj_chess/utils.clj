@@ -48,6 +48,3 @@
 
 (defn has-one? [coll]
   (= 1 (count coll)))
-
-(defn list-of-list? [[fst]]
-  (sequential? fst))

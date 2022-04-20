@@ -27,8 +27,7 @@
                      (poses-between x y [0 -1]))
           (= f ff) (if (< r rr)
                      (poses-between x y [1 0])
-                     (poses-between x y [-1 0]))
-          :else    nil))
+                     (poses-between x y [-1 0]))))
   ([from-pos to-pos offset]
     (->> (iterate (partial add-vec offset) from-pos)
          (take-while (partial not= to-pos))
@@ -77,4 +76,4 @@
     (let [rook-pos (rm :src)]
     (case (file rook-pos)
       1 :queen
-      8 :king))))    
+      8 :king))))

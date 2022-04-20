@@ -8,12 +8,15 @@
 
 (declare get-dsts make-move pgn->move)
 
-(defn attacked? [board player poses]
+(defn attacked? [board player pos]
   (let [enemies   (filter-keys (where? :player (toggle-player player)) board)
         enm-poses (mapcat (partial get-dsts board) enemies)]
-  (case (list-of-list? poses)
-    true  (any-threaten? enm-poses poses)
-    false (threaten? enm-poses poses))))
+  (threaten? enm-poses pos)))
+
+(defn any-attacked? [board player poses]
+  (let [enemies   (filter-keys (where? :player (toggle-player player)) board)
+        enm-poses (mapcat (partial get-dsts board) enemies)]
+  (any-threaten? enm-poses poses)))
 
 (defn in-check? [board player]
   (let [king     {:player player, :type \K}
@@ -40,16 +43,14 @@
         ;; positions from king-pos to king dest after castle
         k-poses (cons kingpos (take 2 poses))]
   (and (not (any-occupied? board poses)) 
-       (not (attacked? board player k-poses)))))
+       (not (any-attacked? board player k-poses)))))
 
-(defn offsets [piece]
-  (match piece
-    {:player _  :type \K} [[0 -1] [0 1] [-1 -1] [-1 0] [-1 1] [1 -1] [1 0] [1 1]]
-    {:player _  :type \Q} [[0 -1] [0 1] [-1 -1] [-1 0] [-1 1] [1 -1] [1 0] [1 1]]
-    {:player _  :type \B} [[-1 -1] [-1 1] [1 -1] [1 1]]
-    {:player _  :type \R} [[0 -1] [0 1] [-1 0] [1 0]]
-    {:player _  :type \N} [[-2 -1] [-2 1] [1 -2] [-1 -2] [2 -1] [2 1] [1 2] [-1 2]]
-    :else                 nil))
+(def offsets
+  {\K [[0 -1] [0 1] [-1 -1] [-1 0] [-1 1] [1 -1] [1 0] [1 1]],
+   \Q [[0 -1] [0 1] [-1 -1] [-1 0] [-1 1] [1 -1] [1 0] [1 1]],
+   \B [[-1 -1] [-1 1] [1 -1] [1 1]],
+   \R [[0 -1] [0 1] [-1 0] [1 0]],
+   \N [[-2 -1] [-2 1] [1 -2] [-1 -2] [2 -1] [2 1] [1 2] [-1 2]]})
 
 (defn pawn-offsets [piece pos]
   (match [piece pos]
@@ -59,11 +60,9 @@
     [{:player "b" :type \P} [_ _]] [[-1 0]]
     :else                          nil))
 
-(defn pawn-takes-offsets [piece]
-  (match piece
-    {:player "w" :type \P} [[1 -1] [1 1]]
-    {:player "b" :type \P} [[-1 1] [-1 -1]]
-    :else                  nil))
+(def pawn-takes-offsets
+  {{:player "w" :type \P} [[1 -1] [1 1]],
+   {:player "b" :type \P} [[-1 1] [-1 -1]]})
 
 (defn pawn-pin-dsts [board piece player src]
   (->> (pawn-takes-offsets piece)
@@ -82,7 +81,7 @@
 
 (defn piece-dsts [board piece player src]
   (let [steps (if (#{\K \N \P} (piece :type)) 1 8)]
-  (->> (offsets piece)
+  (->> (offsets (piece :type))
        (mapcat (partial get-dsts board player src steps)))))
 
 (defn get-dsts
@@ -290,15 +289,13 @@
         :else                 (inc cnt))))
 
 (defn castle-ability [ability board player move]
-  (if (empty? ability)
-    ability
-; (else
+  (if (empty? ability) ability
     (let [frn (case player 
                 "w" upper-case
                 "b" lower-case)
-          kq  (into #{} (mapv frn "kq"))
-          q   (into #{} (mapv frn "q"))
-          k   (into #{} (mapv frn "k"))
+          kq  (set (mapv frn "kq"))
+          q   (set (mapv frn "q"))
+          k   (set (mapv frn "k"))
           src (move :src)
           pc  (board src)
           dst (move :dst)

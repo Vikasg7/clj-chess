@@ -1,22 +1,79 @@
 (ns clj-chess.core
   (:use [clj-chess.utils]
-        [clj-chess.notation]
-        [clj-chess.chess-utils])
-  (:require [clojure.string :refer [split]]
-            [clojure.pprint :refer [pprint]]
-            [clojure.core.match :refer [match]]))
+        [clj-chess.notation])
+  (:require [clojure.core.match :refer [match]]))
 
 (declare get-dsts make-move pgn->move)
 
-(defn attacked? [board player pos]
-  (let [enemies   (filter-keys (where? :player (toggle-player player)) board)
-        enm-poses (mapcat (partial get-dsts board) enemies)]
-  (threaten? enm-poses pos)))
+(def toggle-player {"w" "b", "b" "w"})
 
-(defn any-attacked? [board player poses]
-  (let [enemies   (filter-keys (where? :player (toggle-player player)) board)
-        enm-poses (mapcat (partial get-dsts board) enemies)]
-  (any-threaten? enm-poses poses)))
+(defn get-pos [board piece]
+  (filter-keys (partial = piece) board))
+
+(defn in-board? [pos]
+  (every? (partial in-range? 1 8) pos))
+
+(defn hit-friendly? [piece player]
+  (when piece
+    (= player (piece :player))))
+
+(defn hit-enemy? [piece player]
+  (when piece
+    (not= player (piece :player))))
+
+(defn occupied? [board pos]
+  (not (nil? (board pos))))
+
+(defn any-occupied? [board poses]
+  (some (partial occupied? board) poses))
+
+(defn prv-sqr [player pos]
+  (case player
+    "w" (add-vec [-1 0] pos)
+    "b" (add-vec [1 0] pos)))
+
+(defn rank-diff [move]
+  (let [[r f] (move :src)
+        [a b] (move :dst)]
+  (Math/abs ^Integer (- r a))))
+
+(defn pawn? [piece]
+  (= (piece :type) \P))
+
+(defn king? [piece]
+  (= (piece :type) \K))
+
+(defn rook? [piece]
+  (= (piece :type) \R))
+
+(def rank first)
+(def file second)
+
+(defn castle? [move]
+  (= (move :type) "castle"))
+
+(defn castle-side? [[km rm :as moves]]
+  (when (= (count moves) 2)
+    (let [rook-pos (rm :src)]
+    (case (file rook-pos)
+      1 :queen
+      8 :king))))
+
+(defn attacked? 
+  ([enm-dsts pos]
+    (some (partial = pos) enm-dsts))
+  ([board player pos]
+    (let [enemies  (filter-keys (where? :player (toggle-player player)) board)
+          enm-dsts (mapcat (partial get-dsts board) enemies)]
+    (attacked? enm-dsts pos))))
+
+(defn any-attacked? 
+  ([enm-dsts poses]
+    (some (partial attacked? enm-dsts) poses))
+  ([board player poses]
+    (let [enemies  (filter-keys (where? :player (toggle-player player)) board)
+          enm-dsts (mapcat (partial get-dsts board) enemies)]
+    (any-attacked? enm-dsts poses))))
 
 (defn in-check? [board player]
   (let [king     {:player player, :type \K}
@@ -29,11 +86,11 @@
 
 (defn castle-moves [king-move]
   (let [[r f :as src] (king-move :src)
-        [a b :as dst] (king-move :dst)]
-  (cond (> b f) [{:src src :dst dst} 
-                 {:src [r 8] :dst [r 6]}]
-        (< b f) [{:src src :dst dst} 
-                 {:src [r 1] :dst [r 4]}])))
+        [a b :as dst] (king-move :dst)
+        king-move     (dissoc king-move :type) 
+        rook-move     (cond (> b f) {:src [r 8] :dst [r 6]}
+                            (< b f) {:src [r 1] :dst [r 4]})]
+  [king-move rook-move]))
 
 (defn can-castle? [board player move]
   (let [[km rm] (castle-moves move)
@@ -101,9 +158,9 @@
           piece (board dst)]
     (cond (zero? steps)                 nil
           (not (in-board? dst))         nil
+          (hit-friendly? piece player)  nil
           (nil? piece)                  (lazy-seq (cons dst (get-dsts board player dst (dec steps) offset)))
-          (hit-enemy? piece player)     (lazy-seq (cons dst nil))
-          (hit-friendly? piece player)  nil))))
+          (hit-enemy? piece player)     (lazy-seq (cons dst nil))))))
 
 (defn ambiguity-hint [[file rank]]
   (match [file rank]
@@ -162,16 +219,6 @@
   (concat (mapcat (partial get-moves state) srcs)
           (keep (partial pgn->move state) ["O-O" "O-O-O"]))))
 
-(defn get-potential-moves [state src]
-  (let [board (state :board)
-        npson (pgn->pos (state :npson))
-        piece (board src)
-        playr (piece :player)]
-  (->> (get-dsts board npson src)
-       (mapv (comp (partial enhance-npson piece npson playr)
-                   (partial basic-move src)))
-       (mapcat (partial enhance-promotion piece playr)))))
-
 (defn get-move
   ([state piece dst]
     (get-move state piece dst [nil nil] nil))
@@ -183,10 +230,9 @@
           srcs  (->> (get-pos board piece)
                      (filterv (ambiguity-hint hint)))]
     (when-not (empty? srcs)
-      (let [moves (->> (mapcat (partial get-potential-moves state) srcs)
+      (let [moves (->> (mapcat (partial get-moves state) srcs)
                        (filterv (every-pred (where? :dst dst)
-                                            (where? (comp :type :piece) promoted)))
-                       (remove (partial pinned? board playr)))]
+                                            (where? (comp :type :piece) promoted))))]
       (when (has-one? moves) (first moves)))))))
 
 (def castle-move
@@ -323,7 +369,7 @@
                 npson
                 flmvs
                 hfmvs]} state]
-  (if (invalid? move)
+  (if (empty? move)
     (throw (Error. "Invalid Move"))
 ; (else
     {:board (make-move board move)

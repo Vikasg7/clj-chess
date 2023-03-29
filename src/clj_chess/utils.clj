@@ -48,3 +48,13 @@
 
 (defn has-one? [coll]
   (= 1 (count coll)))
+
+(defn poses-between
+  ([[r f :as x] [rr ff :as y]]
+    (let [offset (cond (= r rr) (if (< f ff) [0 1] [0 -1])
+                       (= f ff) (if (< r rr) [1 0] [-1 0]))]
+    (poses-between x y offset)))
+  ([from-pos to-pos offset]
+    (->> (iterate (partial add-vec offset) from-pos)
+         (take-while (partial not= to-pos))
+         (remove #{from-pos}))))
